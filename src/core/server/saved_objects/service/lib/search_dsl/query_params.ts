@@ -193,7 +193,6 @@ export function getQueryParams({
     registry,
     typeToNamespacesMap ? Array.from(typeToNamespacesMap.keys()) : type
   );
-
   const bool: any = {
     filter: [
       ...(kueryNode != null ? [esKuery.toElasticsearchQuery(kueryNode)] : []),
@@ -213,13 +212,22 @@ export function getQueryParams({
   };
 
   if (search) {
+    // search by any substring if the query's types include any from queryStringTypes
+    const queryStringTypes = ['index-pattern', 'visualization'];
+    const shouldUseQueryString = queryStringTypes.some((queryType) => types.includes(queryType));
+    if (shouldUseQueryString) {
+      search = `*${search}`;
+    }
     const useMatchPhrasePrefix = shouldUseMatchPhrasePrefix(search);
+    // using getSimpleQueryStringClause for query string or simple query string because it works
+    // but name is misleading and will be harder to customize query string without its own function
     const simpleQueryStringClause = getSimpleQueryStringClause({
       search,
       types,
       searchFields,
       rootSearchFields,
       defaultSearchOperator,
+      shouldUseQueryString,
     });
 
     if (useMatchPhrasePrefix) {
@@ -239,7 +247,7 @@ export function getQueryParams({
 // we only want to add match_phrase_prefix clauses
 // if the search is a prefix search
 const shouldUseMatchPhrasePrefix = (search: string): boolean => {
-  return search.trim().endsWith('*');
+  return search.trim().endsWith('*') && !search.trim().startsWith('*');
 };
 
 const getMatchPhrasePrefixClauses = ({
@@ -255,6 +263,7 @@ const getMatchPhrasePrefixClauses = ({
 }) => {
   // need to remove the prefix search operator
   const query = search.replace(/[*]$/, '');
+
   const mppFields = getMatchPhrasePrefixFields({ searchFields, types, registry });
   return mppFields.map(({ field, boost }) => {
     return {
@@ -328,18 +337,31 @@ const getSimpleQueryStringClause = ({
   searchFields,
   rootSearchFields,
   defaultSearchOperator,
+  shouldUseQueryString,
 }: {
   search: string;
   types: string[];
   searchFields?: string[];
   rootSearchFields?: string[];
   defaultSearchOperator?: string;
+  shouldUseQueryString: boolean;
 }) => {
-  return {
-    simple_query_string: {
-      query: search,
-      ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
-      ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
-    },
-  };
+  if (shouldUseQueryString) {
+    // use query_string instead of simple_query_string
+    return {
+      query_string: {
+        query: search,
+        ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
+        ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
+      },
+    };
+  } else {
+    return {
+      simple_query_string: {
+        query: search,
+        ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
+        ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
+      },
+    };
+  }
 };
