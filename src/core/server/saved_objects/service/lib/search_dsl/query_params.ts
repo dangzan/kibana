@@ -217,30 +217,32 @@ export function getQueryParams({
     const shouldUseQueryString = queryStringTypes.some((queryType) => types.includes(queryType));
     if (shouldUseQueryString) {
       search = `*${search}`;
-    }
-    const useMatchPhrasePrefix = shouldUseMatchPhrasePrefix(search);
-    // using getSimpleQueryStringClause for query string or simple query string because it works
-    // but name is misleading and will be harder to customize query string without its own function
-    const simpleQueryStringClause = getSimpleQueryStringClause({
-      search,
-      types,
-      searchFields,
-      rootSearchFields,
-      defaultSearchOperator,
-      shouldUseQueryString,
-    });
-
-    if (useMatchPhrasePrefix) {
-      bool.should = [
-        simpleQueryStringClause,
-        ...getMatchPhrasePrefixClauses({ search, searchFields, types, registry }),
-      ];
-      bool.minimum_should_match = 1;
+      const queryStringClause = getQueryStringClause({
+        search,
+        types,
+        searchFields,
+        rootSearchFields,
+        defaultSearchOperator,
+      });
+      bool.must = [queryStringClause];
     } else {
-      bool.must = [simpleQueryStringClause];
+      const useMatchPhrasePrefix = shouldUseMatchPhrasePrefix(search);
+      const simpleQueryStringClause = getSimpleQueryStringClause({
+        search,
+        types,
+        searchFields,
+        rootSearchFields,
+        defaultSearchOperator,
+      });
+      if (useMatchPhrasePrefix) {
+        bool.should = [
+          simpleQueryStringClause,
+          ...getMatchPhrasePrefixClauses({ search, searchFields, types, registry }),
+        ];
+        bool.minimum_should_match = 1;
+      }
     }
   }
-
   return { query: { bool } };
 }
 
@@ -337,31 +339,40 @@ const getSimpleQueryStringClause = ({
   searchFields,
   rootSearchFields,
   defaultSearchOperator,
-  shouldUseQueryString,
 }: {
   search: string;
   types: string[];
   searchFields?: string[];
   rootSearchFields?: string[];
   defaultSearchOperator?: string;
-  shouldUseQueryString: boolean;
 }) => {
-  if (shouldUseQueryString) {
-    // use query_string instead of simple_query_string
-    return {
-      query_string: {
-        query: search,
-        ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
-        ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
-      },
-    };
-  } else {
-    return {
-      simple_query_string: {
-        query: search,
-        ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
-        ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
-      },
-    };
-  }
+  return {
+    simple_query_string: {
+      query: search,
+      ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
+      ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
+    },
+  };
+};
+
+const getQueryStringClause = ({
+  search,
+  types,
+  searchFields,
+  rootSearchFields,
+  defaultSearchOperator,
+}: {
+  search: string;
+  types: string[];
+  searchFields?: string[];
+  rootSearchFields?: string[];
+  defaultSearchOperator?: string;
+}) => {
+  return {
+    query_string: {
+      query: search,
+      ...getSimpleQueryStringTypeFields(types, searchFields, rootSearchFields),
+      ...(defaultSearchOperator ? { default_operator: defaultSearchOperator } : {}),
+    },
+  };
 };
